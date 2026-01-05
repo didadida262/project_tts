@@ -1,0 +1,27 @@
+# Coqui TTS 声音模型训练项目依赖
+
+# 核心TTS框架
+TTS>=0.20.0
+
+# PyTorch - 根据系统选择CPU或GPU版本
+# CPU版本（默认）:
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# 如需GPU支持，请先安装对应CUDA版本的PyTorch:
+# CUDA 11.8: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+# CUDA 12.1: pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# 音频处理
+librosa>=0.9.0
+soundfile>=0.12.0
+numpy>=1.21.0
+
+# 配置和工具
+pyyaml>=6.0
+tqdm>=4.65.0
+pandas>=1.5.0
+
+# 音频转文本（可选，用于自动生成转录）
+openai-whisper>=20231117
+
