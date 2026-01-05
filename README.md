@@ -13,12 +13,14 @@ project_tts/
 │   ├── trainer.py          # 模型训练
 │   └── model_loader.py     # 模型加载和使用
 ├── scripts/                # 脚本文件
+│   ├── convert_m4a_to_wav.py    # m4a转wav脚本
+│   ├── auto_prepare_metadata.py  # 自动生成metadata脚本
 │   ├── prepare_data.py     # 数据准备脚本
 │   ├── train_model.py      # 训练脚本
 │   └── use_model.py        # 模型使用脚本
 ├── data/                   # 数据目录（不提交到git）
-│   ├── audio/              # 原始音频文件
-│   ├── processed/          # 处理后的音频
+│   ├── origdata/           # 原始音频文件（m4a等）
+│   ├── audios/             # 转换后的音频文件（wav）
 │   └── metadata.csv        # 训练数据元数据
 ├── models/                 # 训练好的模型（不提交到git）
 ├── requirements.txt        # 依赖列表
@@ -44,7 +46,15 @@ pip install -r requirements.txt
 
 ### 2. 准备训练数据
 
-#### 方式1：自动转录（推荐，最简单）
+#### 步骤1：格式转换（如果音频是 m4a 格式）
+如果原始音频是 m4a 格式，先转换为 wav：
+
+```bash
+# 将 data/origdata 下的 m4a 文件转换为 wav，输出到 data/audios
+python scripts/convert_m4a_to_wav.py
+```
+
+#### 步骤2：生成metadata（推荐，最简单）
 将音频文件放入 `data/audios/` 目录，运行自动化脚本：
 
 ```bash
