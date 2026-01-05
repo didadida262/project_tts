@@ -44,7 +44,29 @@ pip install -r requirements.txt
 
 ### 2. 准备训练数据
 
-#### 方式1：手动准备
+#### 方式1：自动转录（推荐，最简单）
+将音频文件放入 `data/audios/` 目录，运行自动化脚本：
+
+```bash
+# 自动扫描音频，使用Whisper转录音频，生成metadata.csv
+python scripts/auto_prepare_metadata.py
+```
+
+**参数说明：**
+```bash
+# 指定目录和输出文件
+python scripts/auto_prepare_metadata.py \
+    --audio_dir data/audios \
+    --output data/metadata.csv
+
+# 使用不同的Whisper模型
+python scripts/auto_prepare_metadata.py --whisper_model base
+
+# 指定语言
+python scripts/auto_prepare_metadata.py --language zh
+```
+
+#### 方式2：手动准备
 - 将音频文件放入 `data/audio/` 目录
 - 为每个音频文件创建对应的 `.txt` 文本文件（同名）
 - 运行数据准备脚本：
@@ -53,7 +75,7 @@ pip install -r requirements.txt
 python scripts/prepare_data.py --audio_dir data/audio --metadata_file data/metadata.csv
 ```
 
-#### 方式2：自动转录（使用Whisper）
+#### 方式3：使用prepare_data脚本（带转录）
 ```bash
 python scripts/prepare_data.py \
     --audio_dir data/audio \
