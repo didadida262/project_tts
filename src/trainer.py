@@ -100,21 +100,69 @@ class ModelTrainer:
         logger.info(f"正在从模型 {model_name} 创建配置...")
         
         try:
-            # 使用TTS CLI获取配置（使用python -m TTS，更可靠）
+            # 方法1: 尝试使用 TTS API 获取配置
+            try:
+                from TTS.utils.manage import ModelManager
+                manager = ModelManager()
+                model_path, config_path, model_item = manager.download_model(model_name)
+                
+                # 如果模型已下载，直接复制配置文件
+                if config_path and os.path.exists(config_path):
+                    import shutil
+                    # 确保使用绝对路径
+                    output_config_abs = os.path.abspath(output_config)
+                    shutil.copy2(config_path, output_config_abs)
+                    # 验证文件是否真的创建成功
+                    if os.path.exists(output_config_abs):
+                        logger.info(f"配置文件已创建: {output_config_abs}")
+                        return output_config_abs
+                    else:
+                        raise RuntimeError(f"配置文件复制失败: {output_config_abs}")
+            except Exception as api_error:
+                logger.debug(f"API方法失败: {api_error}，尝试命令行方法...")
+            
+            # 方法2: 尝试使用 tts 命令行工具
             import sys
-            result = subprocess.run(
-                [sys.executable, "-m", "TTS", "--model_name", model_name, "--config_path", output_config],
-                capture_output=True,
-                text=True,
-                check=True
-            )
-            logger.info(f"配置文件已创建: {output_config}")
-            return output_config
-        except subprocess.CalledProcessError as e:
-            logger.error(f"创建配置失败: {e.stderr}")
-            raise
-        except FileNotFoundError:
-            raise RuntimeError("TTS未找到，请确保已安装TTS: pip install TTS")
+            import shutil
+            tts_cmd = shutil.which("tts")
+            if tts_cmd:
+                result = subprocess.run(
+                    [tts_cmd, "--model_name", model_name, "--config_path", output_config],
+                    capture_output=True,
+                    text=True,
+                    check=True
+                )
+                logger.info(f"配置文件已创建: {output_config}")
+                return output_config
+            
+            # 方法3: 尝试使用 python -m TTS.bin.synthesize 或其他方式
+            # 如果都失败，尝试直接下载模型配置
+            from TTS.config import load_config
+            from TTS.utils.manage import ModelManager
+            
+            manager = ModelManager()
+            # 下载模型（如果未下载）
+            model_path, config_path, model_item = manager.download_model(model_name)
+            
+            if config_path and os.path.exists(config_path):
+                import shutil
+                # 确保使用绝对路径
+                output_config_abs = os.path.abspath(output_config)
+                shutil.copy2(config_path, output_config_abs)
+                # 验证文件是否真的创建成功
+                if os.path.exists(output_config_abs):
+                    logger.info(f"配置文件已创建: {output_config_abs}")
+                    return output_config_abs
+                else:
+                    raise RuntimeError(f"配置文件复制失败: {output_config_abs}")
+            else:
+                raise RuntimeError(f"无法获取模型配置: {model_name}")
+                
+        except ImportError as e:
+            raise RuntimeError(f"TTS未正确安装: {str(e)}\n请运行: pip install TTS")
+        except Exception as e:
+            logger.error(f"创建配置失败: {str(e)}")
+            raise RuntimeError(f"无法创建配置文件: {str(e)}")
     
     def update_config(
         self,
