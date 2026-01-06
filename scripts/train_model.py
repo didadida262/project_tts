@@ -2,17 +2,10 @@
 模型训练脚本
 
 运行方式（bash）：
-1) 细调 XTTS（推荐，自动生成临时配置）：
-   python scripts/train_model.py --metadata data/metadata.csv --fine_tune \
-       --output ./models/trained_model \
-       --base_model tts_models/multilingual/multi-dataset/xtts_v2 \
-       --epochs 100 --batch_size 4
-
-2) 标准训练（需提前准备 config.json）：
-   python scripts/train_model.py --metadata data/metadata.csv \
-       --config config.json --output ./models/trained_model \
-       --base_model tts_models/multilingual/multi-dataset/xtts_v2 \
-       --epochs 100 --batch_size 4
+python scripts/train_model.py --metadata data/metadata.csv \
+    --config config.json --output ./models/trained_model \
+    --base_model tts_models/multilingual/multi-dataset/xtts_v2 \
+    --epochs 100 --batch_size 4
 """
 
 import sys
@@ -70,11 +63,6 @@ def main():
         default=4,
         help="批次大小"
     )
-    parser.add_argument(
-        "--fine_tune",
-        action="store_true",
-        help="使用fine-tuning模式（快速训练）"
-    )
     
     args = parser.parse_args()
 
@@ -92,27 +80,17 @@ def main():
         output_path=args.output
     )
     
-    if args.fine_tune:
-        # 使用fine-tuning模式
-        logger.info("使用fine-tuning模式训练...")
-        trainer.fine_tune_xtts(
-            metadata_path=args.metadata,
-            base_model=args.base_model,
-            epochs=args.epochs,
-            batch_size=args.batch_size
-        )
-    else:
-        # 标准训练模式
-        if not args.config:
-            raise ValueError("标准训练模式需要提供 --config 参数")
-        
-        trainer.train(
-            metadata_path=args.metadata,
-            config_path=args.config,
-            restore_path=args.base_model if args.base_model else None,
-            epochs=args.epochs,
-            batch_size=args.batch_size
-        )
+    # 标准训练模式
+    if not args.config:
+        raise ValueError("需要提供 --config 参数")
+    
+    trainer.train(
+        metadata_path=args.metadata,
+        config_path=args.config,
+        restore_path=args.base_model if args.base_model else None,
+        epochs=args.epochs,
+        batch_size=args.batch_size
+    )
     
     logger.info("训练完成！")
 
