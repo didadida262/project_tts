@@ -1,5 +1,18 @@
 """
 模型训练脚本
+
+运行方式（bash）：
+1) 细调 XTTS（推荐，自动生成临时配置）：
+   python scripts/train_model.py --metadata data/metadata.csv --fine_tune \
+       --output ./models/trained_model \
+       --base_model tts_models/multilingual/multi-dataset/xtts_v2 \
+       --epochs 100 --batch_size 4
+
+2) 标准训练（需提前准备 config.json）：
+   python scripts/train_model.py --metadata data/metadata.csv \
+       --config config.json --output ./models/trained_model \
+       --base_model tts_models/multilingual/multi-dataset/xtts_v2 \
+       --epochs 100 --batch_size 4
 """
 
 import sys
@@ -24,8 +37,8 @@ def main():
     parser.add_argument(
         "--metadata",
         type=str,
-        required=True,
-        help="metadata.csv文件路径"
+        default="data/metadata.csv",
+        help="metadata.csv文件路径（默认: data/metadata.csv）"
     )
     parser.add_argument(
         "--output",
@@ -64,6 +77,15 @@ def main():
     )
     
     args = parser.parse_args()
+
+    # 校验 metadata 是否存在
+    metadata_path = Path(args.metadata)
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"未找到 metadata 文件: {metadata_path}")
+
+    # 确保输出目录存在
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     trainer = ModelTrainer(
         config_path=args.config,

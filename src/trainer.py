@@ -28,9 +28,59 @@ class ModelTrainer:
             config_path: 配置文件路径
             output_path: 模型输出路径
         """
+        # 检查TTS是否可用
+        self._check_tts_available()
+        
         self.config_path = config_path
         self.output_path = Path(output_path)
         self.output_path.mkdir(parents=True, exist_ok=True)
+    
+    def _check_tts_available(self):
+        """检查TTS是否可用"""
+        import sys
+        import platform
+        is_windows = platform.system() == "Windows"
+        
+        try:
+            import TTS
+        except ImportError:
+            # 检查Python版本
+            if sys.version_info >= (3, 13):
+                # Windows特定提示
+                if is_windows:
+                    raise RuntimeError(
+                        f"当前Python版本 {sys.version_info.major}.{sys.version_info.minor} 不兼容TTS。\n"
+                        "TTS需要Python 3.9-3.12。\n\n"
+                        "解决方案（Windows）：\n"
+                        "1. 下载并安装Python 3.11（推荐）或3.12：\n"
+                        "   https://www.python.org/downloads/\n"
+                        "   或使用Microsoft Store搜索'Python 3.11'\n\n"
+                        "2. 安装后，使用Python启动器创建虚拟环境：\n"
+                        "   py -3.11 -m venv venv  # 使用Python 3.11\n"
+                        "   或\n"
+                        "   py -3.12 -m venv venv  # 使用Python 3.12\n\n"
+                        "3. 激活虚拟环境（Git Bash）：\n"
+                        "   source venv/Scripts/activate\n\n"
+                        "4. 安装TTS：\n"
+                        "   pip install TTS\n\n"
+                        "5. 重新运行训练脚本"
+                    )
+                else:
+                    raise RuntimeError(
+                        f"当前Python版本 {sys.version_info.major}.{sys.version_info.minor} 不兼容TTS。\n"
+                        "TTS需要Python 3.9-3.12。\n\n"
+                        "解决方案：\n"
+                        "1. 安装Python 3.9-3.12（如未安装）\n"
+                        "2. 使用Python 3.9-3.12创建新的虚拟环境：\n"
+                        "   python3.11 -m venv venv  # 或使用其他3.9-3.12版本\n"
+                        "   source venv/bin/activate\n"
+                        "   pip install TTS"
+                    )
+            else:
+                raise RuntimeError(
+                    "TTS未安装。请运行：\n"
+                    "  pip install TTS"
+                )
     
     def create_config_from_model(
         self,
@@ -50,9 +100,10 @@ class ModelTrainer:
         logger.info(f"正在从模型 {model_name} 创建配置...")
         
         try:
-            # 使用TTS CLI获取配置
+            # 使用TTS CLI获取配置（使用python -m TTS，更可靠）
+            import sys
             result = subprocess.run(
-                ["tts", "--model_name", model_name, "--config_path", output_config],
+                [sys.executable, "-m", "TTS", "--model_name", model_name, "--config_path", output_config],
                 capture_output=True,
                 text=True,
                 check=True
@@ -63,7 +114,7 @@ class ModelTrainer:
             logger.error(f"创建配置失败: {e.stderr}")
             raise
         except FileNotFoundError:
-            raise RuntimeError("TTS命令行工具未找到，请确保已安装TTS: pip install TTS")
+            raise RuntimeError("TTS未找到，请确保已安装TTS: pip install TTS")
     
     def update_config(
         self,
@@ -119,8 +170,9 @@ class ModelTrainer:
         if config_path is None:
             raise ValueError("必须提供配置文件路径")
         
-        # 构建训练命令
-        cmd = ["tts", "train"]
+        # 构建训练命令（使用python -m TTS，更可靠）
+        import sys
+        cmd = [sys.executable, "-m", "TTS", "train"]
         
         if config_path:
             cmd.extend(["--config_path", config_path])
@@ -167,7 +219,7 @@ class ModelTrainer:
                 raise RuntimeError(f"训练失败，退出码: {process.returncode}")
                 
         except FileNotFoundError:
-            raise RuntimeError("TTS命令行工具未找到，请确保已安装TTS: pip install TTS")
+            raise RuntimeError("TTS未找到，请确保已安装TTS: pip install TTS")
         except Exception as e:
             logger.error(f"训练过程出错: {str(e)}")
             raise
