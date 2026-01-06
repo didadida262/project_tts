@@ -51,11 +51,60 @@ class AudioProcessor:
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"音频文件不存在: {file_path}")
         
+        # 检查是否是m4a文件，尝试使用pydub（如果可用）
+        if file_path.lower().endswith('.m4a'):
+            try:
+                from pydub import AudioSegment
+                # 使用pydub加载m4a
+                audio_seg = AudioSegment.from_file(file_path, format="m4a")
+                # 转换为numpy数组
+                samples = audio_seg.get_array_of_samples()
+                audio = np.array(samples, dtype=np.float32)
+                # 如果是立体声，重新整形
+                if audio_seg.channels == 2:
+                    audio = audio.reshape((-1, 2)).T
+                else:
+                    audio = audio.reshape((1, -1))
+                # 归一化到[-1, 1]
+                audio = audio / (1 << (audio_seg.sample_width * 8 - 1))
+                sr = audio_seg.frame_rate
+                logger.info(f"使用pydub成功加载m4a文件: {file_path}")
+                return audio, sr
+            except ImportError:
+                # pydub未安装，静默使用librosa
+                pass
+            except Exception as e:
+                # pydub加载失败，静默使用librosa
+                pass
+        
+        # 使用librosa加载（支持大多数格式）
         try:
             audio, sr = librosa.load(file_path, sr=None, mono=False)
             return audio, sr
         except Exception as e:
-            raise ValueError(f"无法加载音频文件 {file_path}: {str(e)}")
+            error_msg = str(e)
+            if file_path.lower().endswith('.m4a'):
+                # 检查是否是ffmpeg缺失
+                if "ffmpeg" in error_msg.lower() or "WinError 2" in error_msg or "系统找不到指定的文件" in error_msg:
+                    raise ValueError(
+                        f"无法加载m4a文件 {file_path}\n"
+                        f"\n原因：缺少ffmpeg（m4a格式需要ffmpeg支持）\n"
+                        f"\n解决方案（选择其一）：\n"
+                        f"  方案1：安装ffmpeg（推荐）\n"
+                        f"    Windows: 下载 https://ffmpeg.org/download.html\n"
+                        f"    或使用chocolatey: choco install ffmpeg\n"
+                        f"    或使用scoop: scoop install ffmpeg\n"
+                        f"    安装后需要将ffmpeg添加到系统PATH环境变量\n"
+                        f"\n  方案2：使用在线工具或VLC等软件先将m4a转换为wav格式\n"
+                        f"    然后将wav文件放入 data/origdata 目录\n"
+                        f"\n  方案3：使用ffmpeg命令行手动转换\n"
+                        f"    ffmpeg -i input.m4a -ar 22050 -ac 1 output.wav"
+                    )
+                raise ValueError(
+                    f"无法加载m4a文件 {file_path}: {error_msg}\n"
+                    f"请检查文件是否损坏，或安装ffmpeg: https://ffmpeg.org/download.html"
+                )
+            raise ValueError(f"无法加载音频文件 {file_path}: {error_msg}")
     
     def validate_audio(
         self,

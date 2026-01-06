@@ -13,14 +13,101 @@ from typing import List, Dict, Tuple
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+
+def check_environment() -> Tuple[bool, str]:
+    """
+    检查运行环境
+    
+    Returns:
+        (是否通过, 错误信息)
+    """
+    errors = []
+    
+    # 1. 检查Python版本
+    if sys.version_info < (3, 8):
+        errors.append(f"Python版本过低: {sys.version_info.major}.{sys.version_info.minor}，需要Python 3.8+")
+    
+    # 2. 检查必要的依赖库
+    missing_modules = []
+    try:
+        import librosa
+    except ImportError:
+        missing_modules.append("librosa")
+    
+    try:
+        import soundfile
+    except ImportError:
+        missing_modules.append("soundfile")
+    
+    try:
+        import numpy
+    except ImportError:
+        missing_modules.append("numpy")
+    
+    if missing_modules:
+        errors.append(f"缺少依赖库: {', '.join(missing_modules)}")
+    
+    # 3. 检查是否能导入项目模块
+    try:
+        from src.audio_processor import AudioProcessor
+    except ImportError as e:
+        errors.append(f"无法导入项目模块: {str(e)}")
+    
+    if errors:
+        error_msg = "\n".join([f"  [{i+1}] {err}" for i, err in enumerate(errors)])
+        return False, error_msg
+    
+    return True, ""
+
+
+def print_environment_error(error_msg: str):
+    """打印环境错误信息（默认bash环境）"""
+    import platform
+    
+    # 检测操作系统
+    is_windows = platform.system() == "Windows"
+    
+    print("=" * 70)
+    print("环境检查失败！")
+    print("=" * 70)
+    print("\n发现以下问题：")
+    print(error_msg)
+    print("\n" + "=" * 70)
+    print("解决方案：")
+    print("=" * 70)
+    print("\n1. 确保已创建并激活虚拟环境：")
+    if is_windows:
+        print("   python -m venv venv")
+        print("   source venv/Scripts/activate  # Git Bash")
+        print("   或: venv\\Scripts\\activate     # CMD/PowerShell")
+    else:
+        print("   python3 -m venv venv")
+        print("   source venv/bin/activate")
+    print("\n2. 安装项目依赖：")
+    print("   pip install -r requirements.txt")
+    print("\n3. 或单独安装音频处理库：")
+    print("   pip install librosa soundfile numpy")
+    print("\n4. 如果使用国内网络，可使用镜像源：")
+    print("   pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple")
+    print("\n提示：如果虚拟环境已创建，请确保已激活（命令提示符前应显示 (venv)）")
+    print("=" * 70)
+    sys.exit(1)
+
+
+# 环境检查
+is_ok, error_msg = check_environment()
+if not is_ok:
+    print_environment_error(error_msg)
+
+# 导入模块（环境检查通过后）
+from src.audio_processor import AudioProcessor
+
+# 检查Whisper（可选，用于转录功能）
 try:
     import whisper
     WHISPER_AVAILABLE = True
 except ImportError:
     WHISPER_AVAILABLE = False
-    print("警告: openai-whisper 未安装，请运行: pip install openai-whisper")
-
-from src.audio_processor import AudioProcessor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -337,10 +424,31 @@ def main():
     
     args = parser.parse_args()
     
-    # 检查Whisper是否可用
+    # 检查Whisper是否可用（如果需要转录）
     if not args.no_transcribe and not WHISPER_AVAILABLE:
-        logger.error("错误: openai-whisper 未安装")
-        logger.error("请运行: pip install openai-whisper")
+        print("=" * 70)
+        print("错误: openai-whisper 未安装")
+        print("=" * 70)
+        print("\n此脚本需要 Whisper 来进行音频转录。")
+        print("\n请安装:")
+        print("  pip install openai-whisper")
+        print("\n或安装所有项目依赖:")
+        print("  pip install -r requirements.txt")
+        print("=" * 70)
+        sys.exit(1)
+    
+    # 检查输入目录
+    audio_dir_path = Path(args.audio_dir)
+    if not audio_dir_path.exists():
+        print("=" * 70)
+        print("输入目录不存在！")
+        print("=" * 70)
+        print(f"\n目录: {args.audio_dir}")
+        print("\n请执行以下步骤：")
+        print(f"  1. 创建目录: mkdir -p {args.audio_dir}")
+        print(f"  2. 将音频文件放入该目录")
+        print(f"  3. 重新运行脚本")
+        print("=" * 70)
         sys.exit(1)
     
     # 创建生成器
@@ -358,6 +466,9 @@ def main():
             skip_existing=args.skip_existing
         )
         logger.info(f"\n成功！metadata.csv已生成: {metadata_path}")
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        sys.exit(1)
     except Exception as e:
         logger.error(f"生成metadata失败: {str(e)}")
         sys.exit(1)
