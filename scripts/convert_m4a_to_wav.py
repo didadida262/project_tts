@@ -1,5 +1,6 @@
 """
 批量将 m4a 音频文件转换为 wav 格式
+脚本执行：
 source venv/Scripts/activate
 python scripts/convert_m4a_to_wav.py
 
