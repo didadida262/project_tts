@@ -24,6 +24,7 @@ pandas>=1.5.0
 openai-whisper>=20231117
 
 # Transformers - TTS 依赖（需要兼容版本）
-# 注意：新版本的 TTS 需要较新的 transformers 版本
-transformers>=4.30.0
+# 注意：TTS 0.22.0 需要 transformers 4.30.0-4.35.0
+# 4.40+ 版本移除了 BeamSearchScorer，会导致 XTTS 训练失败
+transformers>=4.30.0,<4.36.0
 

@@ -321,86 +321,21 @@ class ModelTrainer:
             
             # 如果需要 checkpoint，也下载它
             if restore_path and ("tts_models" in str(restore_path) or "XTTS" in str(restore_path)):
-                # 检查文件是否存在且完整（model.pth 应该约 1.87GB）
-                file_exists = os.path.isfile(XTTS_CHECKPOINT)
-                file_complete = False
-                expected_size = 2006478848  # model.pth 完整大小约 1.87GB
-                
-                if file_exists:
-                    file_size = os.path.getsize(XTTS_CHECKPOINT)
-                    if file_size >= expected_size * 0.95:  # 允许 5% 误差
-                        file_complete = True
-                        logger.info(f"XTTS checkpoint 文件已存在且完整 ({file_size / 1024 / 1024 / 1024:.2f} GB)")
-                    else:
-                        logger.warning(f"XTTS checkpoint 文件不完整 ({file_size / 1024 / 1024 / 1024:.2f} GB)，将删除并重新下载")
-                        try:
-                            os.remove(XTTS_CHECKPOINT)
-                            logger.info("已删除不完整的文件")
-                        except Exception as e:
-                            logger.warning(f"删除文件失败: {e}")
-                
-                if not file_exists or not file_complete:
+                # 检查文件是否存在
+                if not os.path.isfile(XTTS_CHECKPOINT):
                     logger.info("下载 XTTS checkpoint 文件（约 1.87GB，可能需要较长时间）...")
-                    max_retries = 5  # 增加重试次数
-                    download_success = False
-                    
-                    for retry in range(max_retries):
-                        try:
-                            # 确保文件不存在（如果之前失败）
-                            if os.path.isfile(XTTS_CHECKPOINT):
-                                try:
-                                    os.remove(XTTS_CHECKPOINT)
-                                    logger.info(f"清理不完整的文件，准备重试 {retry + 1}/{max_retries}...")
-                                except:
-                                    pass
-                            
-                            logger.info(f"开始下载（尝试 {retry + 1}/{max_retries}）...")
-                            ModelManager._download_model_files([XTTS_CHECKPOINT_LINK], checkpoints_dir, progress_bar=True)
-                            
-                            # 验证下载完整性
-                            if os.path.isfile(XTTS_CHECKPOINT):
-                                file_size = os.path.getsize(XTTS_CHECKPOINT)
-                                if file_size >= expected_size * 0.95:
-                                    logger.info(f"✓ 下载完成！文件大小: {file_size / 1024 / 1024 / 1024:.2f} GB")
-                                    download_success = True
-                                    break
-                                else:
-                                    logger.warning(f"下载的文件不完整 ({file_size / 1024 / 1024 / 1024:.2f} GB < {expected_size / 1024 / 1024 / 1024:.2f} GB)")
-                                    if retry < max_retries - 1:
-                                        try:
-                                            os.remove(XTTS_CHECKPOINT)
-                                            logger.info(f"已删除不完整文件，将在 {retry + 2}/{max_retries} 次尝试时重新下载")
-                                        except Exception as e:
-                                            logger.warning(f"删除不完整文件失败: {e}")
-                            else:
-                                logger.warning("下载后文件不存在")
-                                
-                        except Exception as e:
-                            logger.warning(f"下载失败 (尝试 {retry + 1}/{max_retries}): {e}")
-                            
-                            # 删除可能不完整的文件
-                            if os.path.isfile(XTTS_CHECKPOINT):
-                                try:
-                                    file_size = os.path.getsize(XTTS_CHECKPOINT)
-                                    logger.info(f"删除不完整的文件 ({file_size / 1024 / 1024 / 1024:.2f} GB)...")
-                                    os.remove(XTTS_CHECKPOINT)
-                                except Exception as del_e:
-                                    logger.warning(f"删除文件失败: {del_e}")
-                            
-                            if retry < max_retries - 1:
-                                import time
-                                wait_time = (retry + 1) * 2  # 递增等待时间：2秒、4秒、6秒...
-                                logger.info(f"等待 {wait_time} 秒后重试...")
-                                time.sleep(wait_time)
-                            else:
-                                raise RuntimeError(
-                                    f"下载 XTTS checkpoint 失败，已重试 {max_retries} 次。\n"
-                                    "请检查网络连接后重新运行训练命令。\n"
-                                    "文件会自动重新下载。"
-                                )
-                    
-                    if not download_success:
-                        raise RuntimeError("下载 XTTS checkpoint 失败")
+                    try:
+                        ModelManager._download_model_files([XTTS_CHECKPOINT_LINK], checkpoints_dir, progress_bar=True)
+                        if os.path.isfile(XTTS_CHECKPOINT):
+                            file_size = os.path.getsize(XTTS_CHECKPOINT)
+                            logger.info(f"✓ 下载完成！文件大小: {file_size / 1024 / 1024 / 1024:.2f} GB")
+                        else:
+                            raise RuntimeError("下载 XTTS checkpoint 失败：文件不存在")
+                    except Exception as e:
+                        raise RuntimeError(f"下载 XTTS checkpoint 失败: {e}")
+                else:
+                    file_size = os.path.getsize(XTTS_CHECKPOINT)
+                    logger.info(f"XTTS checkpoint 文件已存在 ({file_size / 1024 / 1024 / 1024:.2f} GB)")
                 
                 # 更新 checkpoint 路径
                 if not getattr(config.model_args, 'gpt_checkpoint', None):
