@@ -218,28 +218,319 @@ class ModelTrainer:
         if config_path is None:
             raise ValueError("必须提供配置文件路径")
         
-        # 构建训练命令（使用python -m TTS，更可靠）
-        import sys
-        cmd = [sys.executable, "-m", "TTS", "train"]
+        import json
+        import os
         
+        # 检查是否是 XTTS 模型
+        is_xtts = False
+        try:
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = json.load(f)
+                if config_data.get("model") == "xtts":
+                    is_xtts = True
+        except Exception as e:
+            logger.warning(f"无法读取配置文件判断模型类型: {e}")
+        
+        if is_xtts:
+            logger.info("检测到 XTTS 模型，使用 GPTTrainer 进行训练...")
+            self._train_xtts(metadata_path, config_path, restore_path, epochs, batch_size)
+        else:
+            logger.info("使用标准训练流程...")
+            self._train_standard(metadata_path, config_path, restore_path, epochs, batch_size)
+    
+    def _train_xtts(
+        self,
+        metadata_path: str,
+        config_path: str,
+        restore_path: Optional[str] = None,
+        epochs: Optional[int] = None,
+        batch_size: Optional[int] = None
+    ):
+        """使用 GPTTrainer 训练 XTTS 模型"""
+        try:
+            from trainer import Trainer, TrainerArgs
+            from TTS.config.shared_configs import BaseDatasetConfig
+            from TTS.tts.datasets import load_tts_samples
+            from TTS.tts.layers.xtts.trainer.gpt_trainer import GPTTrainer, GPTTrainerConfig
+            from TTS.config import load_config
+            import json
+            import os
+            
+            logger.info("开始训练 XTTS 模型...")
+            logger.info(f"配置文件: {config_path}")
+            logger.info(f"输出路径: {self.output_path}")
+            
+            # 加载配置
+            config = load_config(config_path)
+            
+            # 更新输出路径
+            config.output_path = str(self.output_path)
+            
+            # 更新训练参数
+            if epochs:
+                config.epochs = epochs
+            if batch_size:
+                config.batch_size = batch_size
+            
+            # 检查并下载 XTTS 所需的文件（tokenizer, checkpoint等）
+            from TTS.utils.manage import ModelManager
+            
+            # 创建检查点目录
+            checkpoints_dir = os.path.join(str(self.output_path), "XTTS_v2_files")
+            os.makedirs(checkpoints_dir, exist_ok=True)
+            
+            # XTTS v2 文件链接
+            TOKENIZER_FILE_LINK = "https://coqui.gateway.scarf.sh/hf-coqui/XTTS-v2/main/vocab.json"
+            DVAE_CHECKPOINT_LINK = "https://coqui.gateway.scarf.sh/hf-coqui/XTTS-v2/main/dvae.pth"
+            MEL_NORM_LINK = "https://coqui.gateway.scarf.sh/hf-coqui/XTTS-v2/main/mel_stats.pth"
+            XTTS_CHECKPOINT_LINK = "https://coqui.gateway.scarf.sh/hf-coqui/XTTS-v2/main/model.pth"
+            
+            # 文件路径
+            TOKENIZER_FILE = os.path.join(checkpoints_dir, "vocab.json")
+            DVAE_CHECKPOINT = os.path.join(checkpoints_dir, "dvae.pth")
+            MEL_NORM_FILE = os.path.join(checkpoints_dir, "mel_stats.pth")
+            XTTS_CHECKPOINT = os.path.join(checkpoints_dir, "model.pth")
+            
+            # 下载必需的文件
+            files_to_download = []
+            if not os.path.isfile(TOKENIZER_FILE):
+                files_to_download.append(TOKENIZER_FILE_LINK)
+            if not os.path.isfile(DVAE_CHECKPOINT):
+                files_to_download.append(DVAE_CHECKPOINT_LINK)
+            if not os.path.isfile(MEL_NORM_FILE):
+                files_to_download.append(MEL_NORM_LINK)
+            
+            if files_to_download:
+                logger.info("下载 XTTS 必需文件...")
+                ModelManager._download_model_files(files_to_download, checkpoints_dir, progress_bar=True)
+            
+            # 设置必需的 XTTS 文件路径
+            # 使用 setattr 或直接赋值，取决于 config.model_args 的类型
+            if not getattr(config.model_args, 'tokenizer_file', None) or config.model_args.tokenizer_file == "":
+                config.model_args.tokenizer_file = TOKENIZER_FILE
+                logger.info(f"设置 tokenizer_file: {TOKENIZER_FILE}")
+            
+            # 设置 DVAE 和 mel_norm 文件
+            if not getattr(config.model_args, 'dvae_checkpoint', None) or config.model_args.dvae_checkpoint == "":
+                config.model_args.dvae_checkpoint = DVAE_CHECKPOINT
+                logger.info(f"设置 dvae_checkpoint: {DVAE_CHECKPOINT}")
+            
+            if not getattr(config.model_args, 'mel_norm_file', None) or config.model_args.mel_norm_file == "":
+                config.model_args.mel_norm_file = MEL_NORM_FILE
+                logger.info(f"设置 mel_norm_file: {MEL_NORM_FILE}")
+            
+            # 如果需要 checkpoint，也下载它
+            if restore_path and ("tts_models" in str(restore_path) or "XTTS" in str(restore_path)):
+                # 检查文件是否存在且完整（model.pth 应该约 1.87GB）
+                file_exists = os.path.isfile(XTTS_CHECKPOINT)
+                file_complete = False
+                expected_size = 2006478848  # model.pth 完整大小约 1.87GB
+                
+                if file_exists:
+                    file_size = os.path.getsize(XTTS_CHECKPOINT)
+                    if file_size >= expected_size * 0.95:  # 允许 5% 误差
+                        file_complete = True
+                        logger.info(f"XTTS checkpoint 文件已存在且完整 ({file_size / 1024 / 1024 / 1024:.2f} GB)")
+                    else:
+                        logger.warning(f"XTTS checkpoint 文件不完整 ({file_size / 1024 / 1024 / 1024:.2f} GB)，将删除并重新下载")
+                        try:
+                            os.remove(XTTS_CHECKPOINT)
+                            logger.info("已删除不完整的文件")
+                        except Exception as e:
+                            logger.warning(f"删除文件失败: {e}")
+                
+                if not file_exists or not file_complete:
+                    logger.info("下载 XTTS checkpoint 文件（约 1.87GB，可能需要较长时间）...")
+                    max_retries = 5  # 增加重试次数
+                    download_success = False
+                    
+                    for retry in range(max_retries):
+                        try:
+                            # 确保文件不存在（如果之前失败）
+                            if os.path.isfile(XTTS_CHECKPOINT):
+                                try:
+                                    os.remove(XTTS_CHECKPOINT)
+                                    logger.info(f"清理不完整的文件，准备重试 {retry + 1}/{max_retries}...")
+                                except:
+                                    pass
+                            
+                            logger.info(f"开始下载（尝试 {retry + 1}/{max_retries}）...")
+                            ModelManager._download_model_files([XTTS_CHECKPOINT_LINK], checkpoints_dir, progress_bar=True)
+                            
+                            # 验证下载完整性
+                            if os.path.isfile(XTTS_CHECKPOINT):
+                                file_size = os.path.getsize(XTTS_CHECKPOINT)
+                                if file_size >= expected_size * 0.95:
+                                    logger.info(f"✓ 下载完成！文件大小: {file_size / 1024 / 1024 / 1024:.2f} GB")
+                                    download_success = True
+                                    break
+                                else:
+                                    logger.warning(f"下载的文件不完整 ({file_size / 1024 / 1024 / 1024:.2f} GB < {expected_size / 1024 / 1024 / 1024:.2f} GB)")
+                                    if retry < max_retries - 1:
+                                        try:
+                                            os.remove(XTTS_CHECKPOINT)
+                                            logger.info(f"已删除不完整文件，将在 {retry + 2}/{max_retries} 次尝试时重新下载")
+                                        except Exception as e:
+                                            logger.warning(f"删除不完整文件失败: {e}")
+                            else:
+                                logger.warning("下载后文件不存在")
+                                
+                        except Exception as e:
+                            logger.warning(f"下载失败 (尝试 {retry + 1}/{max_retries}): {e}")
+                            
+                            # 删除可能不完整的文件
+                            if os.path.isfile(XTTS_CHECKPOINT):
+                                try:
+                                    file_size = os.path.getsize(XTTS_CHECKPOINT)
+                                    logger.info(f"删除不完整的文件 ({file_size / 1024 / 1024 / 1024:.2f} GB)...")
+                                    os.remove(XTTS_CHECKPOINT)
+                                except Exception as del_e:
+                                    logger.warning(f"删除文件失败: {del_e}")
+                            
+                            if retry < max_retries - 1:
+                                import time
+                                wait_time = (retry + 1) * 2  # 递增等待时间：2秒、4秒、6秒...
+                                logger.info(f"等待 {wait_time} 秒后重试...")
+                                time.sleep(wait_time)
+                            else:
+                                raise RuntimeError(
+                                    f"下载 XTTS checkpoint 失败，已重试 {max_retries} 次。\n"
+                                    "请检查网络连接后重新运行训练命令。\n"
+                                    "文件会自动重新下载。"
+                                )
+                    
+                    if not download_success:
+                        raise RuntimeError("下载 XTTS checkpoint 失败")
+                
+                # 更新 checkpoint 路径
+                if not getattr(config.model_args, 'gpt_checkpoint', None):
+                    config.model_args.gpt_checkpoint = XTTS_CHECKPOINT
+                # 也设置 xtts_checkpoint
+                if not getattr(config.model_args, 'xtts_checkpoint', None):
+                    config.model_args.xtts_checkpoint = XTTS_CHECKPOINT
+                    logger.info(f"设置 xtts_checkpoint: {XTTS_CHECKPOINT}")
+            
+            # 准备数据集配置
+            # 使用项目根目录作为 path，因为 metadata.csv 中的路径是相对于项目根目录的
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(metadata_path)))
+            metadata_abs_path = os.path.abspath(metadata_path)
+            config_dataset = BaseDatasetConfig(
+                formatter="coqui",
+                dataset_name="my_dataset",
+                path=project_root,  # 使用项目根目录
+                meta_file_train=metadata_abs_path,  # 使用绝对路径
+                meta_file_val="",
+                language=config.get("language", ""),
+            )
+            
+            # 加载训练样本
+            train_samples, eval_samples = load_tts_samples(
+                [config_dataset],
+                eval_split=True,
+                eval_split_max_size=config.get("eval_split_max_size", 256),
+                eval_split_size=config.get("eval_split_size", 0.1),
+            )
+            
+            logger.info(f"训练样本数: {len(train_samples)}, 评估样本数: {len(eval_samples)}")
+            
+            # 初始化模型
+            model = GPTTrainer.init_from_config(config)
+            
+            # 初始化训练器
+            trainer = Trainer(
+                TrainerArgs(
+                    restore_path=restore_path,
+                    skip_train_epoch=False,
+                    start_with_eval=False,
+                    grad_accum_steps=1,
+                ),
+                config,
+                output_path=str(self.output_path),
+                model=model,
+                train_samples=train_samples,
+                eval_samples=eval_samples,
+            )
+            
+            # 开始训练
+            trainer.fit()
+            
+            logger.info("训练完成！")
+            logger.info(f"模型保存在: {self.output_path}")
+            
+        except ImportError as e:
+            raise RuntimeError(
+                f"XTTS 训练所需的模块导入失败: {e}\n"
+                "请确保已正确安装 TTS 和相关依赖。"
+            )
+        except Exception as e:
+            logger.error(f"XTTS 训练过程出错: {str(e)}")
+            raise
+    
+    def _train_standard(
+        self,
+        metadata_path: str,
+        config_path: str,
+        restore_path: Optional[str] = None,
+        epochs: Optional[int] = None,
+        batch_size: Optional[int] = None
+    ):
+        """使用标准训练流程"""
+        import sys
+        import shutil
+        import os
+        
+        logger.info("开始训练模型...")
+        logger.info(f"配置文件: {config_path}")
+        logger.info(f"输出路径: {self.output_path}")
+        
+        # 尝试多种方式找到训练脚本
+        cmd = None
+        
+        # 方式1: 尝试查找 TTS 包中的 train_tts.py
+        try:
+            import TTS
+            tts_dir = os.path.dirname(TTS.__file__)
+            train_script = os.path.join(tts_dir, "bin", "train_tts.py")
+            if os.path.exists(train_script):
+                cmd = [sys.executable, train_script]
+                logger.info(f"找到训练脚本: {train_script}")
+        except Exception as e:
+            logger.debug(f"无法查找 TTS 包: {e}")
+        
+        # 方式2: 如果找不到，尝试使用 train.py
+        if not cmd:
+            try:
+                import TTS
+                tts_dir = os.path.dirname(TTS.__file__)
+                train_script = os.path.join(tts_dir, "train.py")
+                if os.path.exists(train_script):
+                    cmd = [sys.executable, train_script]
+                    logger.info(f"找到训练脚本: {train_script}")
+            except:
+                pass
+        
+        # 方式3: 如果都找不到，提示用户手动运行
+        if not cmd:
+            raise RuntimeError(
+                "无法找到 TTS 训练脚本。\n\n"
+                "请尝试手动运行训练命令：\n"
+                f"1. 确保已激活虚拟环境\n"
+                f"2. 运行以下命令：\n"
+                f"   python -m TTS.trainer.train --config_path {config_path} --output_path {self.output_path}\n\n"
+                "或参考 Coqui TTS 官方文档：https://tts.readthedocs.io/en/latest/training/index.html"
+            )
+        
+        # 添加参数
         if config_path:
             cmd.extend(["--config_path", config_path])
-        
         if restore_path:
             cmd.extend(["--restore_path", restore_path])
-        
-        if metadata_path:
-            cmd.extend(["--train_dataset_path", metadata_path])
-        
         cmd.extend(["--output_path", str(self.output_path)])
-        
         if epochs:
             cmd.extend(["--epochs", str(epochs)])
-        
         if batch_size:
             cmd.extend(["--batch_size", str(batch_size)])
         
-        logger.info("开始训练模型...")
         logger.info(f"命令: {' '.join(cmd)}")
         
         try:
