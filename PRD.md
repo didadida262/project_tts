@@ -74,29 +74,43 @@ project_tts/
 
 ## 三、训练模型
 
-### 1. 准备配置文件
+### 方式一：Fine-tuning 模式（推荐，自动生成配置）
 
-创建 `config.json` 或使用Coqui TTS提供的默认配置：
+使用 `--fine_tune` 参数，脚本会自动生成配置文件，无需手动创建：
 
 ```bash
-# 查看可用的模型配置
-tts --list_models
-
-# 复制默认配置（以XTTS为例）
-tts --model_name tts_models/multilingual/multi-dataset/xtts_v2 --config_path config.json
+python scripts/train_model.py --metadata data/metadata.csv --fine_tune \
+    --output ./models/trained_model \
+    --base_model tts_models/multilingual/multi-dataset/xtts_v2 \
+    --epochs 100 --batch_size 4
 ```
 
-### 2. 修改配置文件
+**参数说明：**
+- `--metadata`: metadata.csv文件路径
+- `--fine_tune`: 启用fine-tuning模式（自动生成配置）
+- `--output`: 模型输出目录
+- `--base_model`: 基础模型（用于fine-tuning）
+- `--epochs`: 训练轮数
+- `--batch_size`: 批次大小
 
-编辑 `config.json`，设置：
-- `datasets`: 数据路径和metadata路径
-- `output_path`: 模型保存路径
-- `trainer`: 训练参数（epochs, batch_size等）
+### 方式二：标准训练模式（需手动创建配置文件）
 
-### 3. 开始训练
+如果需要自定义配置，可以手动创建 `config.json`：
 
 ```bash
-tts --config_path config.json --train
+# 1. 从基础模型生成配置文件
+python -m TTS --model_name tts_models/multilingual/multi-dataset/xtts_v2 --config_path config.json
+
+# 2. 编辑 config.json，设置：
+#    - datasets: 数据路径和metadata路径
+#    - output_path: 模型保存路径
+#    - trainer: 训练参数（epochs, batch_size等）
+
+# 3. 开始训练
+python scripts/train_model.py --metadata data/metadata.csv \
+    --config config.json --output ./models/trained_model \
+    --base_model tts_models/multilingual/multi-dataset/xtts_v2 \
+    --epochs 100 --batch_size 4
 ```
 
 **训练参数说明：**
@@ -104,7 +118,7 @@ tts --config_path config.json --train
 - 模型保存：训练过程中会自动保存checkpoint
 - 监控：查看训练日志了解进度
 
-### 4. 训练完成
+### 训练完成
 
 训练完成后，模型文件保存在配置的 `output_path` 目录中，包含：
 - `model_file.pth`: 模型权重
